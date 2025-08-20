@@ -3,7 +3,7 @@ use pinocchio::{account_info::AccountInfo, program_error::ProgramError};
 
 use crate::{
     error::XTokenError,
-    state::{AccountData, BondingCurve},
+    state::{AccountData, XToken},
 };
 
 /// Accounts for SellTokens instruction
@@ -11,7 +11,7 @@ pub struct SellTokensAccounts<'info> {
     /// Seller account
     pub seller: &'info AccountInfo,
     /// Bonding curve state account
-    pub x_token: &'info AccountInfo,
+    pub bonding_curve: &'info AccountInfo,
     /// Token mint account
     pub mint: &'info AccountInfo,
     /// Seller's token account
@@ -30,7 +30,7 @@ impl<'info> SellTokensAccounts<'info> {
 
         Ok(Self {
             seller: &accounts[0],
-            x_token: &accounts[1],
+            bonding_curve: &accounts[1],
             mint: &accounts[2],
             seller_token_account: &accounts[3],
             fee_recipient: &accounts[4],
@@ -102,21 +102,22 @@ impl<'info> SellTokens<'info> {
         }
 
         // Load bonding curve state
-        let mut bonding_curve_data = self.accounts.x_token.try_borrow_mut_data()?;
-        let x_token = BondingCurve::load_mut(&mut bonding_curve_data)?;
+        let mut bonding_curve_data = self.accounts.bonding_curve.try_borrow_mut_data()?;
+        let bonding_curve = XToken::load_mut(&mut bonding_curve_data)?;
 
-        if x_token.is_initialized == 0 {
+        if bonding_curve.is_initialized == 0 {
             return Err(XTokenError::AccountNotInitialized.into());
         }
 
         // Verify mint matches
-        if x_token.token_mint != *self.accounts.mint.key() {
+        if bonding_curve.token_mint != *self.accounts.mint.key() {
             return Err(XTokenError::InvalidAccountData.into());
         }
 
         // Calculate price
-        let total_proceeds = x_token.calculate_sell_price(self.instruction_data.token_amount)?;
-        let fee = x_token.calculate_fee(total_proceeds)?;
+        let total_proceeds =
+            bonding_curve.calculate_sell_price(self.instruction_data.token_amount)?;
+        let fee = bonding_curve.calculate_fee(total_proceeds)?;
         let net_proceeds = total_proceeds
             .checked_sub(fee)
             .ok_or(ProgramError::ArithmeticOverflow)?;
@@ -127,12 +128,12 @@ impl<'info> SellTokens<'info> {
         }
 
         // Check bonding curve has enough SOL
-        if self.accounts.x_token.lamports() < total_proceeds {
+        if self.accounts.bonding_curve.lamports() < total_proceeds {
             return Err(XTokenError::InsufficientFunds.into());
         }
 
         // Derive bonding curve PDA seeds
-        let _bump = x_token.bump;
+        let _bump = bonding_curve.bump;
 
         // Burn tokens from seller
         pinocchio_token::instructions::Burn {
@@ -144,7 +145,7 @@ impl<'info> SellTokens<'info> {
         .invoke()?;
 
         // Transfer SOL from bonding curve to seller
-        let mut bonding_curve_lamports = self.accounts.x_token.try_borrow_mut_lamports()?;
+        let mut bonding_curve_lamports = self.accounts.bonding_curve.try_borrow_mut_lamports()?;
         let mut seller_lamports = self.accounts.seller.try_borrow_mut_lamports()?;
 
         *bonding_curve_lamports = bonding_curve_lamports
@@ -170,7 +171,7 @@ impl<'info> SellTokens<'info> {
         }
 
         // Update bonding curve state
-        x_token.update_sell(self.instruction_data.token_amount, total_proceeds)?;
+        bonding_curve.update_sell(self.instruction_data.token_amount, total_proceeds)?;
 
         Ok(())
     }

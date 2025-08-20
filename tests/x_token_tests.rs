@@ -6,7 +6,7 @@ use solana_sdk::{
     system_program, sysvar,
 };
 use spl_token::ID as TOKEN_PROGRAM_ID;
-use x_token::{instructions::InitializeInstructionData, state::BondingCurve, ID};
+use x_token::{instructions::InitializeInstructionData, state::XToken, ID};
 
 // Note: This test is commented out because it requires full mollusk setup
 // with all required accounts. In a production environment, you would
@@ -22,7 +22,7 @@ fn test_initialize_bonding_curve() {
     let payer = Pubkey::new_unique();
 
     // Derive bonding curve PDA
-    let (x_token, _bump) =
+    let (bonding_curve, _bump) =
         Pubkey::find_program_address(&[BondingCurve::SEED_PREFIX, mint.as_ref()], &program_id);
 
     let instruction_data = InitializeInstructionData {
@@ -43,7 +43,7 @@ fn test_initialize_bonding_curve() {
         program_id,
         accounts: vec![
             AccountMeta::new(authority, true),
-            AccountMeta::new(x_token, false),
+            AccountMeta::new(bonding_curve, false),
             AccountMeta::new(mint, false),
             AccountMeta::new(payer, true),
             AccountMeta::new_readonly(system_program::ID, false),
@@ -69,7 +69,7 @@ fn test_initialize_bonding_curve() {
 
 #[test]
 fn test_bonding_curve_pricing() {
-    let mut x_token = BondingCurve {
+    let mut x_token = XToken {
         authority: [0u8; 32],
         token_mint: [0u8; 32],
         sol_reserve: 0,
@@ -88,12 +88,12 @@ fn test_bonding_curve_pricing() {
     };
 
     // Test buy price calculation
-    let buy_price = x_token.calculate_buy_price(1_000_000_000).unwrap(); // 1 token
+    let buy_price = bonding_curve.calculate_buy_price(1_000_000_000).unwrap(); // 1 token
     assert!(buy_price > 0, "Buy price should be greater than 0");
 
     // Test sell price calculation after some supply
-    x_token.total_supply = 1_000_000_000; // 1 token in circulation
-    let sell_price = x_token.calculate_sell_price(1_000_000_000).unwrap(); // Sell 1 token
+    bonding_curve.total_supply = 1_000_000_000; // 1 token in circulation
+    let sell_price = bonding_curve.calculate_sell_price(1_000_000_000).unwrap(); // Sell 1 token
     assert!(sell_price > 0, "Sell price should be greater than 0");
     assert!(
         sell_price <= buy_price,
@@ -101,6 +101,6 @@ fn test_bonding_curve_pricing() {
     );
 
     // Test fee calculation
-    let fee = x_token.calculate_fee(1_000_000).unwrap(); // 1% of 0.001 SOL
+    let fee = bonding_curve.calculate_fee(1_000_000).unwrap(); // 1% of 0.001 SOL
     assert_eq!(fee, 10_000, "Fee should be 1% of the amount"); // 0.00001 SOL
 }

@@ -1,9 +1,14 @@
 use bytemuck::{Pod, Zeroable};
-use pinocchio::{account_info::AccountInfo, program_error::ProgramError, pubkey::Pubkey};
+use pinocchio::{
+    account_info::AccountInfo,
+    instruction::{Seed, Signer},
+    program_error::ProgramError,
+    pubkey::Pubkey,
+};
 
 use crate::{
     error::XTokenError,
-    state::{AccountData, BondingCurve},
+    state::{AccountData, XToken},
 };
 
 /// Accounts for Initialize instruction
@@ -11,7 +16,7 @@ pub struct InitializeAccounts<'info> {
     /// Authority that will control the bonding curve
     pub authority: &'info AccountInfo,
     /// Bonding curve state account (PDA)
-    pub x_token: &'info AccountInfo,
+    pub bonding_curve: &'info AccountInfo,
     /// Token mint account
     pub mint: &'info AccountInfo,
     /// Payer for account creation
@@ -32,7 +37,7 @@ impl<'info> InitializeAccounts<'info> {
 
         Ok(Self {
             authority: &accounts[0],
-            x_token: &accounts[1],
+            bonding_curve: &accounts[1],
             mint: &accounts[2],
             payer: &accounts[3],
             system_program: &accounts[4],
@@ -135,33 +140,34 @@ impl<'info> Initialize<'info> {
         }
 
         // Derive bonding curve PDA
-        let seeds = &[BondingCurve::SEED_PREFIX, self.accounts.mint.key().as_ref()];
+        let seeds = &[XToken::SEED_PREFIX, self.accounts.mint.key().as_ref()];
         let (bonding_curve_address, bump) =
             pinocchio::pubkey::find_program_address(seeds, &crate::ID);
 
-        if bonding_curve_address != *self.accounts.x_token.key() {
+        if bonding_curve_address != *self.accounts.bonding_curve.key() {
             return Err(ProgramError::InvalidSeeds);
         }
 
         // Create bonding curve PDA account
-        let space = BondingCurve::LEN;
+        let space = XToken::LEN;
         let lamports = 1_000_000; // Minimum rent for account (simplified)
 
-        // Use invoke_signed to create PDA account
-        let seeds = &[
-            BondingCurve::SEED_PREFIX,
-            self.accounts.mint.key().as_ref(),
-            &[bump],
+        let bump_bytes = [bump];
+        let seeds = [
+            Seed::from(XToken::SEED_PREFIX),
+            Seed::from(self.accounts.mint.key().as_ref()),
+            Seed::from(&bump_bytes),
         ];
+        let signer = Signer::from(&seeds);
 
         pinocchio_system::instructions::CreateAccount {
             from: self.accounts.payer,
-            to: self.accounts.x_token,
+            to: self.accounts.bonding_curve,
             space: space as u64,
             lamports,
             owner: &crate::ID,
         }
-        .invoke_signed(&[seeds])?;
+        .invoke_signed(&[signer])?;
 
         // Verify mint account exists (should be created by client)
         if self.accounts.mint.data_is_empty() {
@@ -178,10 +184,10 @@ impl<'info> Initialize<'info> {
         .invoke()?;
 
         // Initialize bonding curve state
-        let mut bonding_curve_data = self.accounts.x_token.try_borrow_mut_data()?;
-        let x_token = BondingCurve::load_mut(&mut bonding_curve_data)?;
+        let mut bonding_curve_data = self.accounts.bonding_curve.try_borrow_mut_data()?;
+        let bonding_curve = XToken::load_mut(&mut bonding_curve_data)?;
 
-        x_token.initialize(
+        bonding_curve.initialize(
             *self.accounts.authority.key(),
             *self.accounts.mint.key(),
             self.instruction_data.curve_type,

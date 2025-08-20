@@ -5,7 +5,7 @@ use pinocchio::{program_error::ProgramError, pubkey::Pubkey};
 /// Bonding curve state account
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-pub struct BondingCurve {
+pub struct XToken {
     /// Authority that can update curve parameters
     pub authority: Pubkey,
     /// Token mint address
@@ -38,9 +38,9 @@ pub struct BondingCurve {
     pub reserved: [u8; 64],
 }
 
-impl AccountData for BondingCurve {}
+impl AccountData for XToken {}
 
-impl BondingCurve {
+impl XToken {
     pub const SEED_PREFIX: &'static [u8] = b"x_token";
 
     /// Initialize a new bonding curve
