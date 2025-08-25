@@ -13,7 +13,7 @@ use x_token::{instructions::InitializeInstructionData, state::XToken, ID};
 // set up all necessary accounts including system program, token program, etc.
 
 #[test]
-fn test_initialize_bonding_curve() {
+fn test_initialize_x_token() {
     let program_id = Pubkey::from(ID);
     let mollusk = Mollusk::new(&program_id, "target/deploy/x_token");
 
